@@ -29,10 +29,65 @@ import {
   Search,
   Target,
   TrendingUp,
-  Settings
+  Settings,
+  QrCode,
+  Copy,
+  ChevronRight,
+  Sparkle,
+  Info
 } from 'lucide-react';
 import { Product, CartItem, SaleTransaction, Employee, EmployeeShift, TaxConfig, Customer } from '../types';
 import { CATEGORIES, DISCOUNT_CODES } from '../data/mockProducts';
+import QRCode from 'qrcode';
+
+// Customer unique barcode scanner and profile presentation
+interface CustomerQRCodeProps {
+  value: string;
+  size?: number;
+  className?: string;
+}
+
+export function CustomerQRCode({ value, size = 110, className = '' }: CustomerQRCodeProps) {
+  const [qrSrc, setQrSrc] = useState<string>('');
+
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(value, {
+      margin: 1.5,
+      width: size,
+      color: {
+        dark: '#4f46e5', // Brand Indigo
+        light: '#ffffff', // Clean contrast white
+      },
+    })
+      .then((url) => {
+        if (active) setQrSrc(url);
+      })
+      .catch((err) => {
+        console.error('Failed to generate Loyalty QR code:', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [value, size]);
+
+  if (!qrSrc) {
+    return (
+      <div 
+        className="animate-pulse bg-stone-100 flex items-center justify-center rounded-lg border border-stone-200" 
+        style={{ width: size, height: size }}
+      >
+        <div className="w-4 h-4 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`p-1 bg-white border border-stone-200 rounded-lg shadow-2xs flex items-center justify-center ${className}`}>
+      <img src={qrSrc} alt={`Loyalty QR Code for ${value}`} className="w-full h-auto origin-center" referrerPolicy="no-referrer" />
+    </div>
+  );
+}
 
 interface POSTerminalProps {
   products: Product[];
@@ -107,6 +162,15 @@ export default function POSTerminal({
   const [newCustEmail, setNewCustEmail] = useState<string>('');
   const [custRegNotice, setCustRegNotice] = useState<string | null>(null);
 
+  // New QR & Profile Directory States
+  const [isCustomerDirectoryOpen, setIsCustomerDirectoryOpen] = useState<boolean>(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
+  const [selectedCustomerForQrZoom, setSelectedCustomerForQrZoom] = useState<Customer | null>(null);
+  const [manualQrScanInput, setManualQrScanInput] = useState<string>('');
+  const [scannerFeedback, setScannerFeedback] = useState<{message: string; type: 'success' | 'error' | null}>({message: '', type: null});
+  const [scannerBlink, setScannerBlink] = useState<boolean>(false);
+  const [directorySearchQuery, setDirectorySearchQuery] = useState<string>('');
+
   // Daily Revenue Goal States
   const [dailySalesGoal, setDailySalesGoal] = useState<number>(() => {
     const saved = localStorage.getItem('notus_daily_sales_goal');
@@ -122,6 +186,17 @@ export default function POSTerminal({
   const activeEmployees = useMemo(() => {
     return shifts.filter(s => !s.checkOutTime);
   }, [shifts]);
+
+  const filteredDirectoryCustomers = useMemo(() => {
+    if (!directorySearchQuery) return customers;
+    const q = directorySearchQuery.toLowerCase().trim();
+    return customers.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      c.id.toLowerCase().includes(q) || 
+      c.phone.includes(q) || 
+      c.email.toLowerCase().includes(q)
+    );
+  }, [customers, directorySearchQuery]);
 
   // Checkout & Receipt Modal States
   const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
@@ -646,6 +721,65 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
     link.download = `receipt_${recentInvoice.invoiceNo}.txt`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Handler for loyalty barcodes quick simulation scanner scan
+  const handleSimulatedCategoryScan = (customer: Customer) => {
+    playBeep();
+    setScannerFeedback({
+      message: `🎯 SUCCESS: Scanned loyalty card for ${customer.name}!`,
+      type: 'success'
+    });
+    setScannerBlink(true);
+    setTimeout(() => setScannerBlink(false), 200);
+
+    setSelectedCustomerId(customer.id);
+
+    // Close the scanner nicely
+    setTimeout(() => {
+      setIsQrScannerOpen(false);
+      setScannerFeedback({message: '', type: null});
+    }, 1250);
+  };
+
+  // Handler for manual scanned loyalty code input submit (USB physical laser scanner simulation)
+  const handleManualQrInputSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = manualQrScanInput.trim();
+    if (!query) return;
+
+    const matched = customers.find(c => 
+      c.id.toLowerCase() === query.toLowerCase() || 
+      c.phone.replace(/[^0-9]/g, '') === query.replace(/[^0-9]/g, '') ||
+      c.email.toLowerCase() === query.toLowerCase()
+    );
+
+    if (matched) {
+      handleSimulatedCategoryScan(matched);
+      setManualQrScanInput('');
+    } else {
+      // Sound alert if wrong scan triggers
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const ctx = new AudioContextClass();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(150, ctx.currentTime);
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.35);
+        }
+      } catch (err) {}
+
+      setScannerFeedback({
+        message: `⚠️ No shopper matches the ID/details "${query}".`,
+        type: 'error'
+      });
+    }
   };
 
   return (
@@ -1236,42 +1370,67 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
                     Customer Loyalty Profile
                   </span>
                 </div>
-                <button
-                  id="btn-toggle-customer-mode"
-                  type="button"
-                  onClick={() => {
-                    setIsAddingCustomer(!isAddingCustomer);
-                    setCustRegNotice(null);
-                  }}
-                  className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-white border border-stone-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer"
-                >
-                  {isAddingCustomer ? (
-                    <>
-                      <Search className="w-2.5 h-2.5" /> Lookup Member
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="w-2.5 h-2.5" /> Register Shopper
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-1 flex-wrap shrink-0">
+                  <button
+                    id="btn-open-customer-directory"
+                    type="button"
+                    onClick={() => setIsCustomerDirectoryOpen(true)}
+                    className="text-[9px] font-bold text-stone-600 hover:text-indigo-700 bg-white hover:bg-indigo-50 border border-stone-200 hover:border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Browse all customer QR profile sheets"
+                  >
+                    <QrCode className="w-2.5 h-2.5 text-indigo-600" /> Directory
+                  </button>
+                  <button
+                    id="btn-toggle-customer-mode"
+                    type="button"
+                    onClick={() => {
+                      setIsAddingCustomer(!isAddingCustomer);
+                      setCustRegNotice(null);
+                    }}
+                    className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-white border border-stone-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer"
+                  >
+                    {isAddingCustomer ? (
+                      <>
+                        <Search className="w-2.5 h-2.5" /> Lookup Member
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-2.5 h-2.5" /> Register Shopper
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {!isAddingCustomer ? (
                 <div className="space-y-2">
                   {/* Search Input field */}
                   {!selectedCustomerId ? (
-                    <div className="relative">
+                    <div className="relative flex items-center">
                       <input
                         id="loyalty-search-input"
                         type="text"
                         placeholder="Search Name, Phone, or Email..."
                         value={customerSearchQuery}
                         onChange={(e) => setCustomerSearchQuery(e.target.value)}
-                        className="w-full text-xs pl-8 pr-3 py-1.5 bg-white text-stone-900 border border-stone-200 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                        className="w-full text-xs pl-8 pr-16 py-1.5 bg-white text-stone-900 border border-stone-200 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                       />
                       <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-stone-400" />
                       
+                      <button
+                        id="btn-open-loyalty-scanner"
+                        type="button"
+                        onClick={() => {
+                          setIsQrScannerOpen(true);
+                          setScannerFeedback({message: '', type: null});
+                          setManualQrScanInput('');
+                        }}
+                        className="absolute right-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-850 text-[9px] font-extrabold px-1.5 py-0.5 rounded cursor-pointer border border-indigo-250/70 flex items-center gap-1 transition-all select-none"
+                        title="Scan QR loyalty code"
+                      >
+                        <Scan className="w-2 h-2 text-indigo-650" /> Scan QR
+                      </button>
+
                       {/* Quick recommendations dropdown */}
                       {customerSearchQuery && (
                         <div className="absolute left-0 right-0 mt-1 bg-white border border-stone-200 rounded-lg shadow-lg z-30 max-h-48 overflow-y-auto divide-y divide-stone-100">
@@ -1318,7 +1477,7 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
                               {selectedCustomer.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <h4 className="font-bold text-stone-800">{selectedCustomer.name}</h4>
+                              <h4 className="font-bold text-stone-800 text-xs">{selectedCustomer.name}</h4>
                               <p className="text-[9px] text-stone-400 font-mono">Member ID: {selectedCustomer.id}</p>
                             </div>
                           </div>
@@ -1335,11 +1494,30 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
                           </button>
                         </div>
 
+                        {/* Interactive Personal Loyalty QR Pass Widget */}
+                        <div 
+                          id="btn-zoom-customer-pass"
+                          onClick={() => setSelectedCustomerForQrZoom(selectedCustomer)}
+                          className="flex items-center justify-between gap-3 p-2 bg-white border border-indigo-50 hover:border-indigo-150 rounded-xl cursor-pointer hover:shadow-3xs transition-all select-none"
+                          title="Click to zoom loyalty barcode pass"
+                        >
+                          <div className="flex items-center gap-2 text-left">
+                            <div className="w-6 h-6 bg-indigo-50 text-indigo-650 rounded-lg flex items-center justify-center shrink-0">
+                              <QrCode className="w-3.5 h-3.5" />
+                            </div>
+                            <div>
+                              <span className="font-extrabold text-[10px] text-stone-805 block">Loyalty Membership Pass</span>
+                              <span className="text-[8.5px] text-stone-400 block font-normal leading-none mt-0.5">Click to view printable QR code pass</span>
+                            </div>
+                          </div>
+                          <CustomerQRCode value={selectedCustomer.id} size={28} className="w-7 h-7 rounded border border-stone-150 p-0.5 shrink-0" />
+                        </div>
+
                         {/* Loyalty points display bar */}
                         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-stone-200/60 text-stone-700">
                           <div className="bg-white/80 border border-stone-150 p-1.5 rounded-lg text-center flex flex-col justify-center">
                             <span className="text-[8px] text-stone-400 uppercase tracking-wider block font-bold">Loyalty Points</span>
-                            <span className="font-sans font-extrabold text-indigo-600 text-sm flex items-center justify-center gap-1 mt-0.5">
+                            <span className="font-sans font-extrabold text-indigo-600 text-xs flex items-center justify-center gap-1 mt-0.5">
                               <Award className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
                               {selectedCustomer.loyaltyPoints}
                             </span>
@@ -1347,7 +1525,7 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
                           </div>
                           <div className="bg-white/80 border border-stone-150 p-1.5 rounded-lg text-center flex flex-col justify-center">
                             <span className="text-[8px] text-stone-400 uppercase tracking-wider block font-bold">Visits / Total</span>
-                            <span className="font-mono font-extrabold text-stone-750 text-xs mt-1">
+                            <span className="font-mono font-extrabold text-stone-750 text-[10px] mt-1">
                               {selectedCustomer.visits} visits
                             </span>
                             <span className="text-[8px] text-stone-440 block font-semibold">${selectedCustomer.totalSpent.toFixed(2)} spent</span>
@@ -2068,10 +2246,428 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
               >
                 New Order
               </button>
-            </div>
+             </div>
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 1. LOYALTY CUSTOMER DIRECTORY & PASS SHEETS MODAL */}
+      {/* ========================================================================= */}
+      {isCustomerDirectoryOpen && (
+        <div id="customer-directory-modal" className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-100 flex items-center justify-center p-4 animate-fade-in no-print">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200/80 w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-scale-up">
+            
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-indigo-900 to-indigo-850 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center border border-indigo-400/30">
+                  <QrCode className="w-5 h-5 text-indigo-300" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-widest text-indigo-50 leading-none">Loyalty Profiles Directory</h3>
+                  <p className="text-[10px] text-indigo-200 mt-1 font-mono">Total Members Loaded: {customers.length}</p>
+                </div>
+              </div>
+              <button 
+                id="close-directory-modal-btn"
+                onClick={() => {
+                  setIsCustomerDirectoryOpen(false);
+                  setDirectorySearchQuery('');
+                }}
+                className="p-1.5 rounded-lg bg-indigo-805 hover:bg-rose-650 text-indigo-200 hover:text-white transition-colors cursor-pointer"
+                title="Close directory lookup"
+              >
+                <span className="text-xs uppercase font-extrabold px-1">Exit</span>
+              </button>
+            </div>
+
+            {/* Directory Controls */}
+            <div className="p-4 bg-stone-50 border-b border-stone-200 flex flex-col sm:flex-row gap-3 items-center justify-between">
+              <div className="relative w-full sm:max-w-md">
+                <input
+                  id="directory-search-input"
+                  type="text"
+                  placeholder="Filter name, phone number, email or loyalty key..."
+                  value={directorySearchQuery}
+                  onChange={(e) => setDirectorySearchQuery(e.target.value)}
+                  className="w-full text-xs pl-8 pr-8 py-2 bg-white text-stone-900 border border-stone-250 rounded-xl focus:ring-1 focus:ring-indigo-500 focus:outline-hidden font-medium"
+                />
+                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-stone-400" />
+                {directorySearchQuery && (
+                  <button 
+                    onClick={() => setDirectorySearchQuery('')}
+                    className="absolute right-2.5 top-2 text-stone-400 hover:text-stone-700 font-bold text-xs cursor-pointer"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              {/* Action notice */}
+              <div className="text-[10px] text-stone-500 font-semibold flex items-center gap-1">
+                <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span>Double click or press the select button to link a member directly to the current checkout cart.</span>
+              </div>
+            </div>
+
+            {/* Custom Grid / Sheet content */}
+            <div className="p-6 overflow-y-auto bg-stone-50/50 flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[300px]">
+              {filteredDirectoryCustomers.length === 0 ? (
+                <div className="col-span-full py-16 flex flex-col items-center justify-center text-center space-y-2">
+                  <div className="w-12 h-12 bg-stone-100 rounded-full flex items-center justify-center text-stone-400">
+                    <User className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-bold text-stone-850 text-xs">No registered customer card found</h4>
+                  <p className="text-[10px] text-stone-450">Try broadening your keywords or register a new customer in the POS.</p>
+                </div>
+              ) : (
+                filteredDirectoryCustomers.map(c => {
+                  const isLinkedToCart = selectedCustomerId === c.id;
+                  return (
+                    <div 
+                      key={c.id}
+                      id={`directory-card-${c.id}`}
+                      onDoubleClick={() => {
+                        setSelectedCustomerId(c.id);
+                        setIsCustomerDirectoryOpen(false);
+                      }}
+                      className={`relative bg-white border rounded-2xl p-4.5 flex flex-col transition-all group ${
+                        isLinkedToCart 
+                          ? 'border-indigo-600/80 shadow-md ring-1 ring-indigo-500/20' 
+                          : 'border-stone-200 hover:border-indigo-200 hover:shadow-xs'
+                      }`}
+                    >
+                      {/* Active / Linked Badge */}
+                      {isLinkedToCart && (
+                        <span className="absolute top-3.5 right-3.5 bg-indigo-600 text-white text-[7.5px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-0.5">
+                          <CheckCircle2 className="w-2 h-2 fill-white text-indigo-600" /> Selected
+                        </span>
+                      )}
+
+                      {/* Header profile info */}
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-slate-100 text-stone-700 flex items-center justify-center font-bold text-sm shrink-0 border border-stone-200 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-500 transition-colors">
+                          {c.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="space-y-0.5 min-w-0 pr-12">
+                          <h4 className="font-extrabold text-stone-850 text-xs truncate leading-tight">{c.name}</h4>
+                          <span className="text-[9px] font-mono font-bold text-stone-450 block">{c.id}</span>
+                        </div>
+                      </div>
+
+                      {/* Meta lists */}
+                      <div className="mt-3.5 space-y-1.5 text-[10px] text-stone-500 border-t border-b border-stone-100 py-3.5">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 font-medium"><Phone className="w-3 h-3 text-stone-400 shrink-0" /> Phone:</span>
+                          <span className="font-bold text-stone-800">{c.phone}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 font-medium"><Mail className="w-3 h-3 text-stone-400 shrink-0" /> Email:</span>
+                          <span className="font-semibold text-stone-800 truncate pl-3 text-right max-w-[140px]">{c.email}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-stone-50">
+                          <span className="font-medium text-stone-450 uppercase tracking-widest text-[8px]">Loyalty Credits</span>
+                          <span className="font-extrabold text-indigo-600 flex items-center gap-0.5 text-xs">
+                            <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" /> {c.loyaltyPoints} points
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-stone-450 uppercase tracking-widest text-[8px]">Total Spend Cash</span>
+                          <span className="font-bold font-mono text-stone-800 text-xs">${c.totalSpent.toFixed(2)} / {c.visits} visits</span>
+                        </div>
+                      </div>
+
+                      {/* Embed generated unique loyalty QR code pass */}
+                      <div className="mt-4 flex items-center gap-3.5 justify-between bg-stone-50 rounded-xl p-2.5 border border-stone-150">
+                        <div className="text-[9px] text-stone-450 leading-relaxed text-left space-y-1 font-mono">
+                          <span className="font-extrabold text-stone-700 block uppercase tracking-wider">QR Code Pass</span>
+                          <span>Encoded: {c.id}</span>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(c.id);
+                              triggerSystemWarning(`Copied Member key: "${c.id}"`);
+                            }}
+                            className="bg-white hover:bg-stone-100 border border-stone-200 text-stone-600 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer"
+                            title="Copy badge unique key"
+                          >
+                            <Copy className="w-2.5 h-2.5 text-stone-400" /> Copy Key
+                          </button>
+                        </div>
+                        <div 
+                          onClick={() => setSelectedCustomerForQrZoom(c)}
+                          className="cursor-pointer group-hover:scale-105 transition-transform shrink-0"
+                          title="Zoom in on Loyalist Pass"
+                        >
+                          <CustomerQRCode value={c.id} size={50} className="w-12 h-12 p-0.5 border border-stone-200 rounded-md" />
+                        </div>
+                      </div>
+
+                      {/* Modal Actions */}
+                      <div className="mt-4 flex gap-1.5">
+                        <button
+                          id={`btn-zoomcard-${c.id}`}
+                          type="button"
+                          onClick={() => setSelectedCustomerForQrZoom(c)}
+                          className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-[9.5px] font-bold py-1.5 px-2 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          <QrCode className="w-3 h-3 text-stone-500 shrink-0" />
+                          <span>View Pass</span>
+                        </button>
+                        
+                        <button
+                          id={`btn-selectcard-${c.id}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCustomerId(isLinkedToCart ? '' : c.id);
+                            if (!isLinkedToCart) {
+                              setIsCustomerDirectoryOpen(false);
+                              triggerSystemWarning(`Member "${c.name}" linked to cash checkout successfully.`);
+                            }
+                          }}
+                          className={`flex-1 text-[9.5px] font-extrabold py-1.5 px-2 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 ${
+                            isLinkedToCart
+                              ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                              : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-3xs'
+                          }`}
+                        >
+                          {isLinkedToCart ? 'Unlink Cart' : 'Link Cart'}
+                        </button>
+                      </div>
+
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-stone-100 border-t border-stone-200 text-center text-[10px] text-stone-450 font-medium">
+              Notus POS Loyalty Database encrypted safely. Supports rapid scan check-in integration.
+            </div>
+
+          </div>
+        </div>
+      )}
+
+
+      {/* ========================================================================= */}
+      {/* 2. LOYALTY QR BARCODE SCANNER SIMULATION MODAL */}
+      {/* ========================================================================= */}
+      {isQrScannerOpen && (
+        <div id="loyalty-scanner-simulation-modal" className="fixed inset-0 bg-stone-950/80 backdrop-blur-xs z-100 flex items-center justify-center p-4 animate-fade-in no-print">
+          <div className="bg-stone-900 border border-stone-750 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col text-stone-100 animate-scale-up">
+            
+            {/* Scanner header */}
+            <div className="p-4 bg-stone-850 border-b border-stone-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Scan className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+                <span className="text-[11px] font-extrabold uppercase tracking-widest text-emerald-400">POS Loyalty Barcode Scanner Gateway</span>
+              </div>
+              <button 
+                id="close-loyalty-scanner-btn"
+                onClick={() => {
+                  setIsQrScannerOpen(false);
+                  setScannerFeedback({message: '', type: null});
+                }}
+                className="text-stone-400 hover:text-white hover:bg-stone-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border border-stone-800"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Scanner Viewfinder Box */}
+            <div className="p-6 flex flex-col items-center justify-center bg-stone-950 relative min-h-[340px]">
+              
+              {/* Laser Flash overlay */}
+              {scannerBlink && (
+                <div className="absolute inset-0 bg-emerald-500/25 z-20 animate-ping pointer-events-none" />
+              )}
+
+              {/* Viewfinder Frame */}
+              <div className="relative w-48 h-48 border-2 border-emerald-500/40 rounded-3xl p-4 bg-stone-900/50 flex flex-col items-center justify-center shadow-[0_0_25px_rgba(16,185,129,0.1)] group">
+                {/* 4 Corner Markers */}
+                <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-emerald-500 rounded-tl-xl" />
+                <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-emerald-500 rounded-tr-xl" />
+                <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-emerald-500 rounded-bl-xl" />
+                <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-emerald-500 rounded-br-xl" />
+
+                {/* Simulated Red/Green Laser line moving vertically */}
+                <div className={`absolute left-0 right-0 h-0.5 bg-emerald-500/80 shadow-[0_0_10px_rgba(16,185,129,0.8)] pointer-events-none animate-bounce`} style={{ top: '35%' }} />
+
+                {/* Laser scan graphics inside target box */}
+                <div className="w-24 h-24 bg-stone-800/40 rounded-xl border border-stone-750 flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity">
+                  <QrCode className="w-12 h-12 text-stone-600 animate-pulse" />
+                </div>
+
+                <span className="text-[8px] font-mono font-extrabold text-emerald-400/65 mt-2.5 tracking-wider select-none animate-pulse uppercase">VIEW FINDER EYE</span>
+              </div>
+
+              {/* Feedback messages */}
+              <div className="mt-5 text-center min-h-[48px] px-6 max-w-sm flex items-center justify-center self-center">
+                {scannerFeedback.message ? (
+                  <div className={`text-[11px] font-bold py-1.5 px-3 rounded-lg border-2 animate-bounce ${
+                    scannerFeedback.type === 'success'
+                      ? 'bg-emerald-950/85 text-emerald-300 border-emerald-800'
+                      : 'bg-rose-950/85 text-rose-300 border-rose-800'
+                  }`}>
+                    {scannerFeedback.message}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-stone-400 leading-normal font-mono select-none">
+                    🎯 Bring loyalty membership badge or QR code in front of the cashier scanner, or execute simulated scan buttons below.
+                  </p>
+                )}
+              </div>
+
+              {/* Form representing keyboard-wedge physical scanner typing */}
+              <form onSubmit={handleManualQrInputSubmit} className="mt-4 w-full max-w-xs flex items-center gap-1.5">
+                <input
+                  id="scanner-manual-input"
+                  type="text"
+                  placeholder="Focus standard USB scan input..."
+                  value={manualQrScanInput}
+                  onChange={(e) => setManualQrScanInput(e.target.value)}
+                  className="flex-1 bg-stone-900 border border-stone-700 rounded-lg text-xs px-2.5 py-1.5 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 text-stone-105 placeholder-stone-600 font-mono"
+                  autoFocus
+                />
+                <button
+                  id="btn-keyboard-scan-submit"
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] py-1.5 px-3 rounded-lg transition-colors cursor-pointer select-none border border-emerald-500 shadow-xs uppercase tracking-wider shrink-0"
+                >
+                  Enter
+                </button>
+              </form>
+            </div>
+
+            {/* QUICK SIMULATOR DEACTUATION PANEL - Beautifully presents each customer so we can mock actions */}
+            <div className="p-4 bg-stone-850 border-t border-stone-800 space-y-2">
+              <span className="text-[8.5px] font-extrabold uppercase tracking-widest text-stone-400 flex items-center gap-1">
+                <Sparkle className="w-2.5 h-2.5 text-indigo-400" /> Mock QR Scan Simulator Trigger Controls
+              </span>
+              <p className="text-[9px] text-stone-400 leading-normal">
+                No real scanner device? Click any registered customer card below to simulate bringing their unique loyalist QR pass in front of the laser beam.
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto pr-1">
+                {customers.map(c => {
+                  const isLinked = selectedCustomerId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      id={`simulate-scan-trigger-${c.id}`}
+                      type="button"
+                      onClick={() => handleSimulatedCategoryScan(c)}
+                      className={`p-2 rounded-xl text-left border flex items-center justify-between gap-1 transition-all cursor-pointer ${
+                        isLinked
+                          ? 'border-emerald-700 bg-emerald-950/20 hover:bg-emerald-950/30 text-emerald-300'
+                          : 'border-stone-700 bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-white'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold block truncate">{c.name}</span>
+                        <code className="text-[8px] font-mono text-stone-450 block">{c.id}</code>
+                      </div>
+                      <div className="w-7 h-7 bg-white p-0.5 rounded border border-stone-600 flex items-center justify-center shrink-0">
+                        <QrCode className="w-5 h-5 text-indigo-850 shrink-0" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Instructions help text */}
+            <div className="p-3.5 bg-stone-900 text-center justify-center text-[9px] text-stone-500 border-t border-stone-850 leading-relaxed font-sans">
+              💡 Physical Keyboard-Wedge emulation compatible: Any automated USB sequence typing a member key and pressing [ENTER] matches instantly.
+            </div>
+
+          </div>
+        </div>
+      )}
+
+
+      {/* ========================================================================= */}
+      {/* 3. LOYALTY CARD INDIVIDUAL PASSPORT ZOOM DIALOG MODAL */}
+      {/* ========================================================================= */}
+      {selectedCustomerForQrZoom && (
+        <div id="loyalty-pass-zoom-modal" className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-110 flex items-center justify-center p-4 animate-fade-in print-container no-print">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl border border-stone-150 w-full max-w-sm flex flex-col items-center animate-scale-up text-stone-900 text-center relative print-box">
+            
+            {/* Card Ribbon Accent background */}
+            <div className="absolute top-0 left-0 right-0 h-28 bg-linear-to-tr from-indigo-700 to-purple-800 rounded-t-3xl" />
+
+            {/* Header member logo frame */}
+            <div className="relative mt-8 flex flex-col items-center">
+              <div className="w-16 h-16 rounded-full bg-white text-indigo-900 flex items-center justify-center font-extrabold text-2xl border-4 border-white shadow-md">
+                {selectedCustomerForQrZoom.name.charAt(0).toUpperCase()}
+              </div>
+              <h3 className="text-sm font-extrabold text-white mt-2 drop-shadow-sm uppercase tracking-wider">{selectedCustomerForQrZoom.name}</h3>
+              <p className="text-[10px] text-indigo-150 leading-none">Registered Loyalty Pass Member</p>
+            </div>
+
+            {/* Passport presentation Body */}
+            <div className="mt-8 bg-stone-50 rounded-2xl border border-stone-200/85 p-5 w-full space-y-4 shadow-3xs">
+              
+              {/* Massive high definition Vector QR Loyalty Code */}
+              <div className="flex flex-col items-center justify-center space-y-1">
+                <CustomerQRCode value={selectedCustomerForQrZoom.id} size={150} className="w-36 h-36 border-2 border-stone-150 p-1 bg-white rounded-xl shadow-xs" />
+                <span className="text-[10px] font-mono font-extrabold text-stone-500 mt-2 block tracking-widest uppercase">ID: {selectedCustomerForQrZoom.id}</span>
+              </div>
+
+              {/* Metadata Details */}
+              <div className="border-t border-dashed border-stone-250 pt-3.5 space-y-2 text-[10px] text-stone-600 leading-tight">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-stone-440">Loyalty Balance:</span>
+                  <span className="font-extrabold text-indigo-700 text-xs flex items-center gap-0.5"><Award className="w-3.5 h-3.5 text-amber-500 shrink-0" /> {selectedCustomerForQrZoom.loyaltyPoints} points</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-stone-440">Purchases Audit:</span>
+                  <span className="font-bold font-mono text-stone-850">{selectedCustomerForQrZoom.visits} visits / ${selectedCustomerForQrZoom.totalSpent.toFixed(2)} spent</span>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-stone-200/60">
+                  <span className="font-medium text-stone-440">Registration Phone:</span>
+                  <span className="font-medium text-stone-850">{selectedCustomerForQrZoom.phone}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-stone-440">Account Email:</span>
+                  <span className="font-medium text-stone-850 truncate max-w-[170px]">{selectedCustomerForQrZoom.email}</span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Passport Printable Card Controls */}
+            <div className="mt-5.5 w-full flex gap-2.5">
+              <button
+                id="btn-print-membership-pass"
+                type="button"
+                onClick={() => {
+                  window.print();
+                }}
+                className="flex-1 bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-700 text-xs font-bold py-2.5 px-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                title="Print digital membership passport card"
+              >
+                <Printer className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+                <span>Print Pass</span>
+              </button>
+              
+              <button
+                id="btn-close-passzoom-dialog"
+                type="button"
+                onClick={() => setSelectedCustomerForQrZoom(null)}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all cursor-pointer shadow-md shadow-indigo-150 hover:shadow-lg"
+              >
+                Dismiss
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
     </div>
   );
