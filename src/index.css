@@ -1,1 +1,38 @@
 @import "tailwindcss";
+
+@media print {
+  /* Hide every element on the page */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Make only the print-invoice-area and its children visible */
+  #print-invoice-area,
+  #print-invoice-area * {
+    visibility: visible;
+  }
+  
+  /* Reset layout, margins, and position of print container so it displays perfectly on paper */
+  #print-invoice-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide print-only buttons or interactive indicators inside the invoice if any */
+  .no-print {
+    display: none !important;
+    height: 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

@@ -45,6 +45,7 @@ export default function POSTerminal({
   const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
   const [recentInvoice, setRecentInvoice] = useState<SaleTransaction | null>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [printFormat, setPrintFormat] = useState<'thermal' | 'detailed'>('thermal');
 
   // Filter products based on Category & Search Filter
   const filteredProducts = useMemo(() => {
@@ -217,9 +218,9 @@ export default function POSTerminal({
     }, 850); // Small realistic delay
   };
 
-  // Receipt Actions simulations
-  const handleReceiptPrintSimulation = () => {
-    alert(`Triggering Print Spooler for Invoice: ${recentInvoice?.invoiceNo}\nThermal width: 80mm.`);
+  // Trigger native print dialog for the current browser page
+  const handleReceiptPrint = () => {
+    window.print();
   };
 
   const handleReceiptDownloadSimulation = () => {
@@ -684,128 +685,292 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
 
       {/* RECIPT DIALOG MODAL SIMULATION */}
       {isReceiptModalOpen && recentInvoice && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-55 overflow-y-auto">
-          {/* Backdrop exit block */}
-          <div className="fixed inset-0" onClick={() => setIsReceiptModalOpen(false)} />
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-55 overflow-y-auto print:p-0 print:bg-white">
+          {/* Backdrop exit block - Hidden when printing */}
+          <div className="fixed inset-0 no-print" onClick={() => setIsReceiptModalOpen(false)} />
           
           <div 
             id="receipt-modal-card"
-            className="relative bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl border border-stone-200 z-60 animate-in fade-in duration-300"
+            className="relative bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-stone-200 z-60 animate-in fade-in duration-300 print:shadow-none print:border-none print:rounded-none print:w-full print:max-w-full print:bg-white print:p-0"
           >
-            {/* Modal Header banner */}
-            <div className="bg-emerald-500 text-white p-4 text-center">
-              <div className="w-10 h-10 rounded-full bg-emerald-600/30 flex items-center justify-center mx-auto mb-2">
-                <CheckCircle2 className="w-6 h-6 text-white" />
+            {/* Modal Header banner - Hidden when printing */}
+            <div className="bg-emerald-500 text-white p-4 text-center no-print flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-emerald-600/30 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <h3 className="font-bold text-xs tracking-wide">TENDER PAY SUCCESSFUL</h3>
+                  <p className="text-[9px] text-emerald-100 font-mono">Invoice: {recentInvoice.invoiceNo}</p>
+                </div>
               </div>
-              <h3 className="font-bold text-sm tracking-wide">TENDER PAY SUCCESSFUL</h3>
-              <p className="text-[10px] text-emerald-100 font-mono mt-0.5">Invoice: {recentInvoice.invoiceNo}</p>
+              <button 
+                onClick={() => setIsReceiptModalOpen(false)}
+                className="text-white/80 hover:text-white hover:bg-emerald-600 p-1 rounded-md transition-colors"
+              >
+                ✕
+              </button>
             </div>
 
-            {/* Simulated Thermal Paper Receipt layout */}
-            <div className="p-6 bg-stone-50 border-b border-dashed border-stone-300">
-              <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs text-stone-700 text-xs font-mono select-text leading-relaxed">
-                <div className="text-center font-sans space-y-1 pb-3 border-b border-stone-100 italic">
-                  <h4 className="font-extrabold text-sm text-stone-900 font-mono not-italic uppercase tracking-wider">
-                    Notus Terminal Kit
-                  </h4>
-                  <p className="text-[10px] text-stone-500">123 Corporate Blvd, Ste 400</p>
-                  <p className="text-[10px] text-stone-500">Tel: (555) 019-2834</p>
-                  <p className="text-[10px] text-indigo-600 font-semibold uppercase font-sans not-italic text-xs mt-1">POS RECEIPT DUPLICATE</p>
-                </div>
+            {/* Layout selection tabs - Hidden when printing */}
+            <div className="no-print bg-stone-100 p-1.5 flex gap-1.5 border-b border-stone-250/60 text-xs shadow-inner">
+              <button
+                onClick={() => setPrintFormat('thermal')}
+                className={`flex-1 py-2 font-extrabold rounded-lg transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
+                  printFormat === 'thermal'
+                    ? 'bg-white text-indigo-700 shadow-sm border-stone-200'
+                    : 'text-stone-500 hover:text-stone-850 hover:bg-stone-50 border-transparent'
+                }`}
+              >
+                <div className="text-base">📟</div>
+                80mm Thermal Receipt
+              </button>
+              <button
+                onClick={() => setPrintFormat('detailed')}
+                className={`flex-1 py-2 font-extrabold rounded-lg transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
+                  printFormat === 'detailed'
+                    ? 'bg-white text-indigo-700 shadow-sm border-stone-200'
+                    : 'text-stone-500 hover:text-stone-850 hover:bg-stone-50 border-transparent'
+                }`}
+              >
+                <div className="text-base">📄</div>
+                Detailed corporate Invoice
+              </button>
+            </div>
 
-                <div className="space-y-0.5 border-b border-stone-100 py-3 text-[10px] text-stone-500">
-                  <div className="flex justify-between"><span>DATE / TIME:</span><span>{recentInvoice.timestamp}</span></div>
-                  <div className="flex justify-between"><span>INVOICE NO:</span><span className="font-bold text-stone-800">{recentInvoice.invoiceNo}</span></div>
-                  <div className="flex justify-between"><span>DUTY CLERK:</span><span>John Doe-012</span></div>
-                  <div className="flex justify-between"><span>PAY TYPE:</span><span>{recentInvoice.paymentMethod}</span></div>
-                </div>
-
-                {/* Items detailed breakdown list */}
-                <div className="py-3 border-b border-stone-100 text-[11px] space-y-2">
-                  <div className="flex justify-between text-[10px] font-bold text-stone-400">
-                    <span>ITEM CATALOG DESCR.</span>
-                    <span>TOTAL</span>
+            {/* Central Printable Area */}
+            <div className="p-6 bg-stone-50 max-h-[500px] overflow-y-auto print:max-h-none print:p-0 print:bg-white" id="print-invoice-area">
+              
+              {printFormat === 'thermal' ? (
+                /* 1. Monochromatic Thermal Paper Slip format */
+                <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs text-stone-700 text-[11px] font-mono select-text leading-relaxed mx-auto max-w-sm print:border-none print:shadow-none print:p-0">
+                  <div className="text-center font-sans space-y-1 pb-4 border-b border-dashed border-stone-300">
+                    <h4 className="font-extrabold text-base text-stone-900 tracking-wider">
+                      ★ NOTUS TERMINAL ★
+                    </h4>
+                    <p className="text-[10px] text-stone-500">123 Corporate Blvd, Ste 400</p>
+                    <p className="text-[10px] text-stone-500">Tel: (555) 019-2834</p>
+                    <div className="bg-stone-900 text-white text-[9px] hover:bg-black font-semibold px-2 py-0.5 rounded uppercase mt-2 inline-block font-sans">
+                      POS THERMAL SALE RECEIPT
+                    </div>
                   </div>
-                  {recentInvoice.items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-start">
-                      <div className="break-words max-w-[180px]">
-                        <span>{item.name}</span>
-                        <div className="text-[10px] text-stone-400">
-                          {item.quantity} x ${item.price.toFixed(2)}
+
+                  <div className="space-y-1 border-b border-dashed border-stone-300 py-3 text-[10px] text-stone-500 uppercase">
+                    <div className="flex justify-between"><span>DATE / TIME:</span><span>{recentInvoice.timestamp}</span></div>
+                    <div className="flex justify-between"><span>INVOICE ID:</span><span className="font-bold text-stone-800">{recentInvoice.invoiceNo}</span></div>
+                    <div className="flex justify-between"><span>REGISTER:</span><span>STATION-01-A</span></div>
+                    <div className="flex justify-between"><span>DUTY CLERK:</span><span>John Doe-012</span></div>
+                    <div className="flex justify-between"><span>PAYMENT METHOD:</span><span>{recentInvoice.paymentMethod}</span></div>
+                  </div>
+
+                  {/* Items detailed breakdown list */}
+                  <div className="py-3 border-b border-dashed border-stone-300 space-y-2">
+                    <div className="flex justify-between text-[10px] font-bold text-stone-400">
+                      <span>QTY / ITEM CATALOG DESCR.</span>
+                      <span>TOTAL</span>
+                    </div>
+                    {recentInvoice.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-start">
+                        <div className="break-words max-w-[220px]">
+                          <span className="font-semibold">{item.quantity} x {item.name}</span>
+                          <span className="text-[10px] text-stone-400 block">@ ${item.price.toFixed(2)} each</span>
+                        </div>
+                        <span className="font-bold">${item.total.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Totals arithmetic lines */}
+                  <div className="space-y-1.5 pt-3 text-stone-850">
+                    <div className="flex justify-between">
+                      <span>SUBTOTAL AMOUNT:</span>
+                      <span>${recentInvoice.subtotal.toFixed(2)}</span>
+                    </div>
+                    {recentInvoice.discountAmount > 0 && (
+                      <div className="flex justify-between text-stone-900 border-b border-dotted border-stone-200 pb-1">
+                        <span>DISCOUNT ({recentInvoice.discountCode}):</span>
+                        <span>-${recentInvoice.discountAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>TAX CALCULATED (8%):</span>
+                      <span>${recentInvoice.taxAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-stone-950 font-extrabold border-t border-dashed border-stone-300 pt-2 font-sans">
+                      <span>GRAND TOTAL PAID:</span>
+                      <span className="font-mono text-base">${recentInvoice.totalAmount.toFixed(2)}</span>
+                    </div>
+
+                    <div className="border-t border-dotted border-stone-200 pt-2.5 space-y-1 text-[10px] text-stone-500">
+                      <div className="flex justify-between">
+                        <span>RECEIVED TENDER CASH:</span>
+                        <span>${(recentInvoice.cashReceived || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-stone-900">
+                        <span>CHANGE RETURNED:</span>
+                        <span className="font-bold">${(recentInvoice.changeDue || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* barcode */}
+                  <div className="pt-6 text-center mt-2 border-t border-dashed border-stone-300">
+                    <div className="h-10 bg-[repeating-linear-gradient(90deg,#000,#000_2px,#fff_2px,#fff_5px,#000_5px,#000_7px)] mx-auto max-w-[190px] opacity-80" />
+                    <p className="text-[9px] text-stone-400 mt-1.5 uppercase font-semibold">Verification Code: {recentInvoice.id}</p>
+                    <p className="text-[10px] text-stone-600 font-sans italic mt-3 font-semibold">
+                      *** THANK YOU FOR VISITING NOTUS ***<br/>
+                      PLEASE RETAIN THIS COMPLIANCE SLIP
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                /* 2. Premium Detailed Corporate Letterhead format */
+                <div className="bg-white p-8 rounded-xl border border-stone-200 shadow-xs text-stone-700 text-xs select-text leading-relaxed mx-auto max-w-full print:border-none print:shadow-none print:p-0">
+                  {/* Letterhead Header */}
+                  <div className="flex justify-between items-start border-b border-indigo-100 pb-6">
+                    <div>
+                      <h4 className="text-xl font-black text-indigo-700 tracking-tight font-sans">
+                        NOTUS TERMINALS, INC.
+                      </h4>
+                      <p className="text-[11px] text-stone-500 font-sans mt-1">
+                        High Speed POS Infrastructure & Store Control System
+                      </p>
+                      <p className="text-[10px] text-stone-400 font-sans mt-0.5">
+                        Headquarters: 123 Corporate Blvd, Suite 400<br/>
+                        Cityville, NY 10001 | contact@notustech.cloud
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded-md font-sans">
+                        OFFICIAL TRANSACTION RECORD
+                      </span>
+                      <h5 className="text-stone-900 font-extrabold text-sm mt-3 font-mono">
+                        {recentInvoice.invoiceNo}
+                      </h5>
+                      <p className="text-[10px] text-stone-400 mt-0.5">Date: {recentInvoice.timestamp}</p>
+                    </div>
+                  </div>
+
+                  {/* Metadata Row */}
+                  <div className="grid grid-cols-2 gap-4 py-6 border-b border-stone-100 text-[11px]">
+                    <div>
+                      <span className="font-bold text-stone-400 uppercase tracking-wider block text-[9px] mb-1">Billed From</span>
+                      <strong className="text-stone-800 block text-xs">Notus Station Terminal-1A</strong>
+                      <span className="text-stone-500">Clerk Operative: John Doe (ID: 012)</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-stone-400 uppercase tracking-wider block text-[9px] mb-1">Billed To</span>
+                      <strong className="text-stone-800 block text-xs">Walk-In Retail Customer</strong>
+                      <span className="text-stone-500">Clearing Method: {recentInvoice.paymentMethod}</span>
+                    </div>
+                  </div>
+
+                  {/* Items detailed grid table */}
+                  <table className="w-full text-left my-6 text-[11.5px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-stone-200 text-stone-400 text-[9px] font-bold uppercase tracking-wider">
+                        <th className="py-2.5">Item Description</th>
+                        <th className="py-2.5 text-center w-12">Qty</th>
+                        <th className="py-2.5 text-right w-24">Unit Price</th>
+                        <th className="py-2.5 text-right w-24">Total Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 text-stone-800">
+                      {recentInvoice.items.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="py-3 font-medium text-stone-900">
+                            {item.name}
+                          </td>
+                          <td className="py-3 text-center font-semibold text-stone-500">
+                            {item.quantity}
+                          </td>
+                          <td className="py-3 text-right text-stone-500">
+                            ${item.price.toFixed(2)}
+                          </td>
+                          <td className="py-3 text-right font-bold text-stone-900">
+                            ${item.total.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* Financial breakdown */}
+                  <div className="flex justify-end pt-4 border-t border-stone-200">
+                    <div className="w-72 space-y-2 text-[11px] text-stone-500">
+                      <div className="flex justify-between">
+                        <span>Invoice Subtotal:</span>
+                        <span className="font-semibold text-stone-800">${recentInvoice.subtotal.toFixed(2)}</span>
+                      </div>
+                      {recentInvoice.discountAmount > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Discount Applied ({recentInvoice.discountCode}):</span>
+                          <span className="font-bold">-${recentInvoice.discountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>Applicable Sales Tax (8.00%):</span>
+                        <span className="font-semibold text-stone-800">${recentInvoice.taxAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-indigo-700 font-extrabold border-t border-indigo-100 pt-2.5 font-sans">
+                        <span className="text-xs uppercase tracking-wide">Grand Total Billed:</span>
+                        <span className="text-sm font-bold text-indigo-600 font-mono">${recentInvoice.totalAmount.toFixed(2)}</span>
+                      </div>
+
+                      <div className="border-t border-dashed border-stone-200 pt-2.5 space-y-1 text-[10px] leading-relaxed">
+                        <div className="flex justify-between">
+                          <span>Payment Method Cleared:</span>
+                          <span className="font-medium text-stone-700">{recentInvoice.paymentMethod}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Amount Tendered:</span>
+                          <span className="font-mono text-stone-800">${(recentInvoice.cashReceived || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-stone-800 font-medium">
+                          <span>Change Settled / Due Back:</span>
+                          <span className="font-mono text-stone-900 font-bold">${(recentInvoice.changeDue || 0).toFixed(2)}</span>
                         </div>
                       </div>
-                      <span className="font-bold">${item.total.toFixed(2)}</span>
                     </div>
-                  ))}
-                </div>
-
-                {/* Totals arithmetic lines */}
-                <div className="space-y-1.5 pt-3 text-[11px] text-stone-600">
-                  <div className="flex justify-between">
-                    <span>Subtotal:</span>
-                    <span>${recentInvoice.subtotal.toFixed(2)}</span>
-                  </div>
-                  {recentInvoice.discountAmount > 0 && (
-                    <div className="flex justify-between text-emerald-600">
-                      <span>Discount ({recentInvoice.discountCode}):</span>
-                      <span>-${recentInvoice.discountAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span>Sales Tax (8%):</span>
-                    <span>${recentInvoice.taxAmount.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-stone-950 font-bold border-t border-stone-100 pt-2 font-sans">
-                    <span>Grand Total Due:</span>
-                    <span>${recentInvoice.totalAmount.toFixed(2)}</span>
                   </div>
 
-                  <div className="border-t border-dotted border-stone-200 pt-2 space-y-1 text-[10.5px]">
-                    <div className="flex justify-between">
-                      <span>Received Cash Tender:</span>
-                      <span>${(recentInvoice.cashReceived || 0).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-emerald-700 font-bold">
-                      <span>Change Given Back:</span>
-                      <span>$${(recentInvoice.changeDue || 0).toFixed(2)}</span>
-                    </div>
+                  <div className="mt-10 pt-6 border-t border-stone-100 text-[10px] text-stone-400 flex justify-between items-center">
+                    <span>Invoice generated automatically by secure Notus crypt-ledger standard.</span>
+                    <span className="font-semibold text-indigo-600 uppercase tracking-widest text-[8px]">
+                      Authentic Document
+                    </span>
                   </div>
                 </div>
+              )}
 
-                {/* Barcode representation */}
-                <div className="pt-5 text-center mt-2">
-                  <div className="h-8 bg-[repeating-linear-gradient(90deg,#000,#000_1px,#fff_1px,#fff_3px,#000_3px,#000_5px,#fff_5px,#fff_7px)] mx-auto max-w-[160px] opacity-80" />
-                  <p className="text-[9px] text-stone-400 mt-1 uppercase font-semibold">Barcode Verification Code</p>
-                </div>
-              </div>
             </div>
 
-            {/* Modal Actions buttons */}
-            <div className="p-4 bg-stone-100 flex gap-2">
+            {/* Modal Actions buttons - Hidden when printing */}
+            <div className="p-4 bg-stone-150/80 border-t border-stone-200 flex gap-2.5 no-print">
               <button
                 id="receipt-print-btn"
-                onClick={handleReceiptPrintSimulation}
-                className="flex-1 bg-white hover:bg-stone-200 border border-stone-300 text-stone-700 text-xs font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                onClick={handleReceiptPrint}
+                className="flex-1 bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 text-xs font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs hover:shadow-sm"
                 title="Print Receipt"
               >
-                <Printer className="w-4 h-4 shrink-0" />
-                Print
+                <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
+                Print Invoice
               </button>
               
               <button
                 id="receipt-download-btn"
                 onClick={handleReceiptDownloadSimulation}
-                className="flex-1 bg-white hover:bg-stone-200 border border-stone-300 text-stone-700 text-xs font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="flex-1 bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 text-xs font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs hover:shadow-sm"
                 title="Download text receipt"
               >
-                <Download className="w-4 h-4 shrink-0" />
-                Download
+                <Download className="w-4 h-4 text-stone-500 shrink-0" />
+                Download TXT
               </button>
 
               <button
                 id="receipt-close-btn"
                 onClick={() => setIsReceiptModalOpen(false)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs py-2.5 px-4.5 rounded-lg transition-colors cursor-pointer"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs py-3 px-5 rounded-xl transition-colors cursor-pointer shadow-md shadow-indigo-150"
                 title="Start new order"
               >
                 New Order
@@ -817,3 +982,4 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
     </div>
   );
 }
+
