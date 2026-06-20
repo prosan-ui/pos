@@ -26,7 +26,10 @@ import {
   Award,
   Phone,
   Mail,
-  Search
+  Search,
+  Target,
+  TrendingUp,
+  Settings
 } from 'lucide-react';
 import { Product, CartItem, SaleTransaction, Employee, EmployeeShift, TaxConfig, Customer } from '../types';
 import { CATEGORIES, DISCOUNT_CODES } from '../data/mockProducts';
@@ -43,6 +46,9 @@ interface POSTerminalProps {
   taxConfig?: TaxConfig;
   customers?: Customer[];
   setCustomers?: React.Dispatch<React.SetStateAction<Customer[]>>;
+  transactions?: SaleTransaction[];
+  currentEmployeeId?: string;
+  setCurrentEmployeeId?: (id: string) => void;
 }
 
 export default function POSTerminal({
@@ -56,7 +62,10 @@ export default function POSTerminal({
   shifts = [],
   taxConfig,
   customers = [],
-  setCustomers
+  setCustomers,
+  transactions = [],
+  currentEmployeeId,
+  setCurrentEmployeeId
 }: POSTerminalProps) {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [discountCode, setDiscountCode] = useState('');
@@ -64,8 +73,29 @@ export default function POSTerminal({
   const [cashTendered, setCashTendered] = useState<string>('');
   
   // Choose Employee State
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(() => {
+    if (currentEmployeeId) return currentEmployeeId;
+    const active = shifts.filter(s => !s.checkOutTime);
+    if (active.length > 0) return active[0].employeeId;
+    return '';
+  });
   const [manualEmployeeId, setManualEmployeeId] = useState<string>('');
+
+  // Keep selectedEmployeeId in sync with currentEmployeeId
+  useEffect(() => {
+    if (currentEmployeeId) {
+      setSelectedEmployeeId(currentEmployeeId);
+    }
+  }, [currentEmployeeId]);
+
+  // Keep currentEmployeeId in sync with selectedEmployeeId changes
+  useEffect(() => {
+    if (selectedEmployeeId && selectedEmployeeId !== 'manual' && setCurrentEmployeeId) {
+      if (selectedEmployeeId !== currentEmployeeId) {
+        setCurrentEmployeeId(selectedEmployeeId);
+      }
+    }
+  }, [selectedEmployeeId, currentEmployeeId, setCurrentEmployeeId]);
 
   // Customer Loyalty States
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
@@ -76,6 +106,18 @@ export default function POSTerminal({
   const [newCustPhone, setNewCustPhone] = useState<string>('');
   const [newCustEmail, setNewCustEmail] = useState<string>('');
   const [custRegNotice, setCustRegNotice] = useState<string | null>(null);
+
+  // Daily Revenue Goal States
+  const [dailySalesGoal, setDailySalesGoal] = useState<number>(() => {
+    const saved = localStorage.getItem('notus_daily_sales_goal');
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 1500; // default $1500 goal
+  });
+  const [isEditingGoal, setIsEditingGoal] = useState(false);
+  const [goalInputVal, setGoalInputVal] = useState(dailySalesGoal.toString());
 
   const activeEmployees = useMemo(() => {
     return shifts.filter(s => !s.checkOutTime);
@@ -345,6 +387,49 @@ export default function POSTerminal({
     );
   }, [customers, customerSearchQuery]);
 
+  // Daily Sales calculations
+  const dailyRevenueProgress = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString();
+    
+    // Sum the total of all transactions completed today
+    const salesToday = (transactions || []).reduce((sum, tx) => {
+      try {
+        const txDate = new Date(tx.timestamp).toLocaleDateString();
+        if (txDate === todayStr) {
+          return sum + tx.totalAmount;
+        }
+      } catch (e) {
+        // Fallback checks
+      }
+      if (tx.timestamp && tx.timestamp.includes(todayStr)) {
+        return sum + tx.totalAmount;
+      }
+      return sum;
+    }, 0);
+
+    const percent = dailySalesGoal > 0 ? (salesToday / dailySalesGoal) * 100 : 0;
+    const remaining = Math.max(0, dailySalesGoal - salesToday);
+    const isCompleted = salesToday >= dailySalesGoal;
+
+    return {
+      salesToday,
+      percent: parseFloat(percent.toFixed(1)),
+      remaining,
+      isCompleted
+    };
+  }, [transactions, dailySalesGoal]);
+
+  const handleSaveGoal = (valStr: string) => {
+    const val = parseFloat(valStr);
+    if (!isNaN(val) && val > 0) {
+      setDailySalesGoal(val);
+      localStorage.setItem('notus_daily_sales_goal', val.toString());
+      setIsEditingGoal(false);
+    } else {
+      triggerSystemWarning("Daily revenue goal must be a positive number.");
+    }
+  };
+
   // Fast Cash Options for Payment Calculation
   const fastCashAmounts = useMemo(() => {
     if (totalAmount <= 0) return [];
@@ -564,7 +649,157 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 min-h-[calc(100vh-5rem)] p-4 md:p-6 bg-slate-50/50">
+    <div className="flex flex-col gap-6 p-4 md:p-6 bg-slate-50/50 min-h-[calc(100vh-5rem)]">
+      
+      {/* DAILY SALES TARGET TRACKER */}
+      <div id="daily-sales-goal-card" className="bg-white border border-stone-200 rounded-xl p-4 md:p-5 shadow-2xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          
+          {/* Title and stats summary */}
+          <div className="space-y-1 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                <Target className="w-4 h-4 text-indigo-500" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider flex items-center gap-2">
+                  Daily Performance Tracker
+                </h3>
+                <p className="text-[10px] text-stone-400 font-medium">Real-time checkout monitoring vs company target settings</p>
+              </div>
+            </div>
+
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="text-xl font-sans font-extrabold text-stone-800">
+                ${dailyRevenueProgress.salesToday.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-xs text-stone-400">/</span>
+              <span className="text-sm font-semibold text-stone-500 font-mono">
+                ${dailySalesGoal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className={`ml-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                dailyRevenueProgress.isCompleted 
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-250/30' 
+                  : 'bg-indigo-50 text-indigo-700 border border-indigo-250/30'
+              }`}>
+                {dailyRevenueProgress.percent}%
+              </span>
+            </div>
+          </div>
+
+          {/* Interactive visual progress bar container */}
+          <div className="flex-1 max-w-2xl lg:px-4">
+            <div className="flex justify-between text-[10px] font-bold text-stone-400 mb-1.5">
+              <span className="uppercase tracking-wider">Progress Gauge</span>
+              <span>
+                {dailyRevenueProgress.isCompleted 
+                  ? '🎉 GOAL COMPLETED!' 
+                  : `Remaining: $${dailyRevenueProgress.remaining.toFixed(2)}`}
+              </span>
+            </div>
+            
+            <div className="relative w-full h-3.5 bg-stone-100 rounded-full overflow-hidden border border-stone-200 shadow-3xs">
+              <div 
+                className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                  dailyRevenueProgress.isCompleted 
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]' 
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-500'
+                }`}
+                style={{ width: `${Math.min(100, dailyRevenueProgress.percent)}%` }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+            </div>
+
+            <p className="text-[9px] text-stone-400 italic mt-1.5 font-medium">
+              {dailyRevenueProgress.isCompleted 
+                ? "Excellent job! The retail checkout unit is performing above the standard daily goal." 
+                : `Keep driving checkouts! Only $${dailyRevenueProgress.remaining.toFixed(2)} remaining to hit the daily goal.`}
+            </p>
+          </div>
+
+          {/* Manager settings panel */}
+          <div className="p-3 bg-stone-50/80 border border-stone-200/80 rounded-xl lg:w-64">
+            {!isEditingGoal ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Settings className="w-3.5 h-3.5 text-stone-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Sales Goal</span>
+                </div>
+                <button
+                  id="btn-edit-sales-goal"
+                  type="button"
+                  onClick={() => {
+                    setGoalInputVal(dailySalesGoal.toString());
+                    setIsEditingGoal(true);
+                  }}
+                  className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-white hover:bg-stone-50 border border-stone-200/80 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                >
+                  Adjust
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-stone-400 block">Set Target (USD)</span>
+                <div className="flex gap-2">
+                  <input
+                    id="input-sales-goal"
+                    type="number"
+                    min="1"
+                    placeholder="E.g. 1500"
+                    value={goalInputVal}
+                    onChange={(e) => setGoalInputVal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveGoal(goalInputVal);
+                      }
+                    }}
+                    className="w-full text-xs p-1 bg-white text-stone-900 border border-stone-200 rounded focus:ring-1 focus:ring-indigo-500 font-mono"
+                  />
+                  <div className="flex gap-1">
+                    <button
+                      id="btn-save-sales-goal"
+                      type="button"
+                      onClick={() => handleSaveGoal(goalInputVal)}
+                      className="text-[8px] font-bold bg-indigo-600 text-white min-w-[40px] px-2 py-1 rounded hover:bg-indigo-700 cursor-pointer"
+                    >
+                      Save
+                    </button>
+                    <button
+                      id="btn-cancel-sales-goal"
+                      type="button"
+                      onClick={() => setIsEditingGoal(false)}
+                      className="text-[8px] font-bold bg-white text-stone-500 border border-stone-200 px-2 py-1 rounded hover:bg-stone-50 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[8px] text-stone-400 font-bold uppercase">Presets:</span>
+                  {[1000, 2000, 5000].map(val => (
+                    <button
+                      key={val}
+                      id={`btn-preset-goal-${val}`}
+                      type="button"
+                      onClick={() => {
+                        setGoalInputVal(val.toString());
+                        handleSaveGoal(val.toString());
+                      }}
+                      className="text-[8px] font-semibold text-stone-600 bg-white hover:bg-indigo-50 hover:text-indigo-700 border border-stone-200 rounded px-1.5 py-0.5 cursor-pointer"
+                    >
+                      ${val.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
       
       {/* LEFT COLUMN: CATEGORIES + PRODUCTS (Col span 7/12 on large desktops) */}
       <div className="xl:col-span-7 flex flex-col md:flex-row gap-5">
@@ -1837,6 +2072,7 @@ Change Due : $${(recentInvoice.changeDue || 0).toFixed(2)}
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

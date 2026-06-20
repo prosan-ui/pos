@@ -49,6 +49,9 @@ export default function App() {
   // Shifts and Employees States
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<EmployeeShift[]>([]);
+  const [currentEmployeeId, setCurrentEmployeeId] = useState<string>(() => {
+    return localStorage.getItem('notus_current_employee_id') || 'EMP001';
+  });
 
   // Customers (Loyalty database) State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -58,6 +61,11 @@ export default function App() {
   
   // Search bar state sync (passed down to active POS/Inventory views)
   const [searchFilter, setSearchFilter] = useState('');
+
+  // Persist Current Employee ID
+  useEffect(() => {
+    localStorage.setItem('notus_current_employee_id', currentEmployeeId);
+  }, [currentEmployeeId]);
 
   // 1. Mount & Initialize from localStorage
   useEffect(() => {
@@ -457,6 +465,12 @@ export default function App() {
           searchFilter={searchFilter}
           setSearchFilter={setSearchFilter}
           activeSection={activeSection}
+          currentEmployeeId={currentEmployeeId}
+          setCurrentEmployeeId={setCurrentEmployeeId}
+          employees={employees}
+          shifts={shifts}
+          setShifts={setShifts}
+          dispatchNotification={(text, type) => dispatchNotification(text, type)}
         />
 
         {/* Dynamic component routing panels with clean transitions */}
@@ -475,6 +489,9 @@ export default function App() {
                 taxConfig={taxConfig}
                 customers={customers}
                 setCustomers={setCustomers}
+                transactions={transactions}
+                currentEmployeeId={currentEmployeeId}
+                setCurrentEmployeeId={setCurrentEmployeeId}
               />
             )}
 
